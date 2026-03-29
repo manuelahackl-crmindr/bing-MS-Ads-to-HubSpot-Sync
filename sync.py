@@ -1,10 +1,21 @@
 import os
+import re
 import requests
 
 HUBSPOT_TOKEN = os.getenv("HUBSPOT_TOKEN")
 
 if not HUBSPOT_TOKEN:
     raise ValueError("Missing HUBSPOT_TOKEN")
+
+
+def sanitize_campaign_name(name: str) -> str:
+    if not name:
+        return ""
+    cleaned = name.replace("\u00A0", " ")
+    cleaned = re.sub(r"[<>()\;+]", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:256]
+
 
 url = (
     "https://api.hubapi.com/marketing/v3/campaigns"
@@ -64,14 +75,54 @@ if duplicates:
             print(f"  - {first['id']} | {first['hs_name']}")
         for item in items:
             print(f"  - {item['id']} | {item['hs_name']}")
+    raise ValueError("Duplicate msads_campaign_id values must be fixed before sync")
 else:
     print("No duplicate msads_campaign_id values found")
 
-# Test lookup for one known ID
-test_id = "436018748"
-match = campaigns_by_msads_id.get(test_id)
+
+# --- Test report row from Microsoft Ads ---
+report_row = {
+    "CampaignId": "533348352",
+    "CampaignName": "NP  | SN | Köln - Interesse und vor Ort (DACH) + Test",
+    "Impressions": "480",
+    "Clicks": "19",
+    "Spend": "15.99",
+    "Status": "Active",
+}
+
+msads_id = report_row["CampaignId"]
+raw_name = report_row["CampaignName"]
+clean_name = sanitize_campaign_name(raw_name)
+
+print(f"Raw name: {raw_name}")
+print(f"Sanitized name: {clean_name}")
+
+match = campaigns_by_msads_id.get(msads_id)
 
 if match:
-    print(f"Lookup success for {test_id}: {match['id']} | {match['hs_name']}")
+    print("ACTION = PATCH")
+    print(f"HubSpot campaign id: {match['id']}")
+    print("Payload:")
+    print({
+        "properties": {
+            "msads_campaign_id": msads_id,
+            "msads_impressions": report_row["Impressions"],
+            "msads_clicks": report_row["Clicks"],
+            "msads_spend_eur": report_row["Spend"],
+            "msads_status": report_row["Status"],
+        }
+    })
 else:
-    print(f"Lookup failed for {test_id}")
+    print("ACTION = POST")
+    print("Payload:")
+    print({
+        "properties": {
+            "hs_name": clean_name,
+            "hs_notes": "bing",
+            "msads_campaign_id": msads_id,
+            "msads_impressions": report_row["Impressions"],
+            "msads_clicks": report_row["Clicks"],
+            "msads_spend_eur": report_row["Spend"],
+            "msads_status": report_row["Status"],
+        }
+    })
