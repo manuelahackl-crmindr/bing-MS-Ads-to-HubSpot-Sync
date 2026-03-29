@@ -4,6 +4,7 @@ import csv
 import io
 import time
 import zipfile
+from datetime import datetime
 import requests
 import xml.etree.ElementTree as ET
 
@@ -14,6 +15,11 @@ MSADS_REFRESH_TOKEN = os.getenv("MSADS_REFRESH_TOKEN")
 MSADS_DEVELOPER_TOKEN = os.getenv("MSADS_DEVELOPER_TOKEN")
 MSADS_CUSTOMER_ID = os.getenv("MSADS_CUSTOMER_ID")
 MSADS_ACCOUNT_ID = os.getenv("MSADS_ACCOUNT_ID")
+
+PROJECT_PIPELINE_ID = "885593491"
+PROJECT_STAGE_ACTIVE = "133217628"
+PROJECT_STAGE_PAUSED = "1332176283"
+PROJECT_STAGE_ENDED = "1332176282"
 
 required = [
     "HUBSPOT_TOKEN",
@@ -153,6 +159,28 @@ def poll_report(access_token: str, report_request_id: str):
     return response.text
 
 
+def parse_timeperiod_to_week_fields(time_period: str):
+    """
+    Expected examples:
+    - 2026-03-23
+    - 2026-03-23T00:00:00
+    - sometimes other strings that begin with YYYY-MM-DD
+    """
+    if not time_period:
+        raise ValueError("Missing TimePeriod")
+
+    base = time_period[:10]
+    week_start_dt = datetime.strptime(base, "%Y-%m-%d").date()
+    iso = week_start_dt.isocalendar()
+
+    return {
+        "week_start": week_start_dt.isoformat(),
+        "year": str(iso.year),
+        "calendar_week": str(iso.week),
+        "week_key": f"{iso.year}-KW{iso.week:02d}",
+    }
+
+
 def download_and_parse_report(download_url: str):
     response = requests.get(download_url, timeout=120)
     response.raise_for_status()
@@ -166,6 +194,7 @@ def download_and_parse_report(download_url: str):
     reader = csv.DictReader(io.StringIO(content))
     for row in reader:
         rows.append({
+            "TimePeriod": str(row.get("TimePeriod", "")).strip(),
             "CampaignId": str(row.get("CampaignId", "")).strip(),
             "CampaignName": str(row.get("CampaignName", "")).strip(),
             "Impressions": str(row.get("Impressions", "")).strip(),
@@ -239,6 +268,86 @@ def build_hubspot_lookup(results):
     return campaigns_by_msads_id, campaigns_by_clean_name, duplicate_names
 
 
+def get_project_stage_id(status_value: str) -> str:
+    paused_values = {"Paused", "BudgetPaused", "BudgetAndManualPaused"}
+    ended_values = {"Suspended", "Deleted"}
+
+    if status_value in paused_values:
+        return PROJECT_STAGE_PAUSED
+    if status_value in ended_values:
+        return PROJECT_STAGE_ENDED
+    return PROJECT_STAGE_ACTIVE
+
+
+def build_project_name(year: str, kw: str, campaign_name: str, campaign_id: str) -> str:
+    return f"MS Ads | {year} | KW{kw} - {campaign_name} | {campaign_id}"[:256]
+
+
+def project_exists(project_name: str, hubspot_headers: dict) -> bool:
+    search_url = "https://api.hubapi.com/crm/v3/objects/projects/search"
+    payload = {
+        "filterGroups": [
+            {
+                "filters": [
+                    {
+                        "propertyName": "hs_name",
+                        "operator": "EQ",
+                        "value": project_name,
+                    }
+                ]
+            }
+        ],
+        "limit": 1,
+        "properties": ["hs_name"],
+    }
+
+    response = requests.post(search_url, headers=hubspot_headers, json=payload, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+    return data.get("total", 0) > 0
+
+
+def create_project_for_row(report_row: dict, hubspot_headers: dict):
+    week_fields = parse_timeperiod_to_week_fields(report_row["TimePeriod"])
+    clean_name = sanitize_campaign_name(report_row["CampaignName"])
+    campaign_id = report_row["CampaignId"]
+    status_value = report_row["Status"]
+
+    project_name = build_project_name(
+        year=week_fields["year"],
+        kw=week_fields["calendar_week"],
+        campaign_name=clean_name,
+        campaign_id=campaign_id,
+    )
+
+    if project_exists(project_name, hubspot_headers):
+        raise ValueError(f"Project already exists with name: {project_name}")
+
+    project_payload = {
+        "properties": {
+            "hs_name": project_name,
+            "hs_pipeline": PROJECT_PIPELINE_ID,
+            "hs_pipeline_stage": get_project_stage_id(status_value),
+            "msads_campaign_id": campaign_id,
+            "msads_campaign_name": clean_name,
+            "msads_week_key": week_fields["week_key"],
+            "msads_week_start": week_fields["week_start"],
+            "msads_year": week_fields["year"],
+            "msads_calendar_week": week_fields["calendar_week"],
+            "msads_impressions": report_row["Impressions"],
+            "msads_clicks": report_row["Clicks"],
+            "msads_spend_eur": report_row["Spend"],
+        }
+    }
+
+    create_url = "https://api.hubapi.com/crm/v3/objects/projects"
+    response = requests.post(create_url, headers=hubspot_headers, json=project_payload, timeout=30)
+    response.raise_for_status()
+    created = response.json()
+    print("PROJECT POST OK")
+    print(created["id"])
+
+
 def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, duplicate_names, hubspot_headers):
     processed_ids = set()
 
@@ -275,11 +384,11 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
             updated = patch_response.json()
             print("PATCH OK")
             print(updated["id"])
+            create_project_for_row(report_row, hubspot_headers)
             continue
 
         if clean_name in duplicate_names:
-            print(f"SKIP duplicate sanitized name in HubSpot: {clean_name}")
-            continue
+            raise ValueError(f"Duplicate sanitized campaign name in HubSpot: {clean_name}")
 
         name_match = campaigns_by_clean_name.get(clean_name)
         if name_match:
@@ -289,6 +398,7 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
             updated = patch_response.json()
             print("PATCH BY NAME OK")
             print(updated["id"])
+            create_project_for_row(report_row, hubspot_headers)
             continue
 
         create_payload = {
@@ -309,6 +419,8 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
         created = create_response.json()
         print("POST OK")
         print(created["id"])
+
+        create_project_for_row(report_row, hubspot_headers)
 
 
 access_token = refresh_msads_access_token()
