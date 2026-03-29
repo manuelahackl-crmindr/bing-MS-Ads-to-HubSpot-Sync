@@ -324,7 +324,8 @@ def create_project_for_row(report_row: dict, hubspot_headers: dict):
     )
 
     if project_exists(project_name, hubspot_headers):
-        raise ValueError(f"Project already exists with name: {project_name}")
+        print(f"PROJECT ALREADY EXISTS - SKIP: {project_name}")
+        return
 
     project_payload = {
         "properties": {
