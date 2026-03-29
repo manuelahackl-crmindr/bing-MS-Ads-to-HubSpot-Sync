@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 import requests
 
 HUBSPOT_TOKEN = os.getenv("HUBSPOT_TOKEN")
@@ -15,6 +16,22 @@ def sanitize_campaign_name(name: str) -> str:
     cleaned = re.sub(r"[<>()\;+]", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned[:256]
+
+
+def load_report_rows(csv_path: str):
+    rows = []
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append({
+                "CampaignId": str(row.get("CampaignId", "")).strip(),
+                "CampaignName": str(row.get("CampaignName", "")).strip(),
+                "Impressions": str(row.get("Impressions", "")).strip(),
+                "Clicks": str(row.get("Clicks", "")).strip(),
+                "Spend": str(row.get("Spend", "")).strip(),
+                "Status": str(row.get("Status", "Active")).strip() or "Active",
+            })
+    return rows
 
 
 url = (
@@ -65,29 +82,16 @@ for campaign in results:
 if duplicates:
     raise ValueError(f"Duplicate msads_campaign_id values found: {', '.join(duplicates.keys())}")
 
-report_rows = [
-    {
-        "CampaignId": "533348352",
-        "CampaignName": "NP  | SN | Köln - Interesse und vor Ort (DACH) + Test",
-        "Impressions": "480",
-        "Clicks": "19",
-        "Spend": "15.99",
-        "Status": "Active",
-    },
-    {
-        "CampaignId": "436018749",
-        "CampaignName": "[Search] Basel - Vor Ort",
-        "Impressions": "51",
-        "Clicks": "1",
-        "Spend": "0.00",
-        "Status": "Active",
-    },
-]
+report_rows = load_report_rows("msads_report.csv")
 
 for report_row in report_rows:
     msads_id = report_row["CampaignId"]
     clean_name = sanitize_campaign_name(report_row["CampaignName"])
     match = campaigns_by_msads_id.get(msads_id)
+
+    if not msads_id:
+        print("SKIP: missing CampaignId")
+        continue
 
     if match:
         payload = {
