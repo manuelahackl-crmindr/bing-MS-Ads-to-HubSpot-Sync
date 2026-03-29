@@ -160,12 +160,6 @@ def poll_report(access_token: str, report_request_id: str):
 
 
 def parse_timeperiod_to_week_fields(time_period: str):
-    """
-    Expected examples:
-    - 2026-03-23
-    - 2026-03-23T00:00:00
-    - sometimes other strings that begin with YYYY-MM-DD
-    """
     if not time_period:
         raise ValueError("Missing TimePeriod")
 
@@ -307,6 +301,15 @@ def project_exists(project_name: str, hubspot_headers: dict) -> bool:
     return data.get("total", 0) > 0
 
 
+def get_project_pipelines(hubspot_headers):
+    url = "https://api.hubapi.com/crm/v3/pipelines/projects"
+    response = requests.get(url, headers=hubspot_headers, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+    print("PROJECT PIPELINES DEBUG")
+    print(data)
+
+
 def create_project_for_row(report_row: dict, hubspot_headers: dict):
     week_fields = parse_timeperiod_to_week_fields(report_row["TimePeriod"])
     clean_name = sanitize_campaign_name(report_row["CampaignName"])
@@ -342,7 +345,13 @@ def create_project_for_row(report_row: dict, hubspot_headers: dict):
 
     create_url = "https://api.hubapi.com/crm/v3/objects/projects"
     response = requests.post(create_url, headers=hubspot_headers, json=project_payload, timeout=30)
-    response.raise_for_status()
+
+    if response.status_code >= 400:
+        print("PROJECT CREATE ERROR")
+        print(response.status_code)
+        print(response.text)
+        response.raise_for_status()
+
     created = response.json()
     print("PROJECT POST OK")
     print(created["id"])
@@ -460,6 +469,8 @@ hubspot_data, hubspot_headers = get_hubspot_campaigns()
 campaigns_by_msads_id, campaigns_by_clean_name, duplicate_names = build_hubspot_lookup(
     hubspot_data.get("results", [])
 )
+
+get_project_pipelines(hubspot_headers)
 
 sync_rows(
     report_rows,
