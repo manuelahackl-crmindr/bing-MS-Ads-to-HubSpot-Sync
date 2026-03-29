@@ -1,18 +1,37 @@
 import os
+import requests
 
-required = [
-    "MSADS_CLIENT_ID",
-    "MSADS_CLIENT_SECRET",
-    "MSADS_REFRESH_TOKEN",
-    "MSADS_DEVELOPER_TOKEN",
-    "MSADS_CUSTOMER_ID",
-    "MSADS_ACCOUNT_ID",
-    "HUBSPOT_TOKEN",
-]
+HUBSPOT_TOKEN = os.getenv("HUBSPOT_TOKEN")
 
-missing = [key for key in required if not os.getenv(key)]
+if not HUBSPOT_TOKEN:
+    raise ValueError("Missing HUBSPOT_TOKEN")
 
-if missing:
-    raise ValueError(f"Missing secrets: {', '.join(missing)}")
+url = (
+    "https://api.hubapi.com/marketing/v3/campaigns"
+    "?limit=100"
+    "&properties=hs_name"
+    "&properties=msads_campaign_id"
+    "&properties=msads_impressions"
+    "&properties=msads_clicks"
+    "&properties=msads_spend_eur"
+    "&properties=msads_status"
+)
 
-print("All secrets are available")
+headers = {
+    "Authorization": f"Bearer {HUBSPOT_TOKEN}",
+    "Content-Type": "application/json",
+}
+
+response = requests.get(url, headers=headers, timeout=30)
+response.raise_for_status()
+
+data = response.json()
+print(f"Loaded {data.get('total', 0)} campaigns")
+
+results = data.get("results", [])
+for campaign in results[:5]:
+    campaign_id = campaign.get("id")
+    properties = campaign.get("properties", {})
+    name = properties.get("hs_name", "")
+    msads_id = properties.get("msads_campaign_id", "")
+    print(f"- {campaign_id} | {name} | msads_campaign_id={msads_id}")
