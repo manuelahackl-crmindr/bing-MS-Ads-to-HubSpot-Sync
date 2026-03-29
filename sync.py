@@ -17,7 +17,7 @@ MSADS_CUSTOMER_ID = os.getenv("MSADS_CUSTOMER_ID")
 MSADS_ACCOUNT_ID = os.getenv("MSADS_ACCOUNT_ID")
 
 PROJECT_PIPELINE_ID = "885593491"
-PROJECT_STAGE_ACTIVE = "1332176280"
+PROJECT_STAGE_ACTIVE = "1332176279"
 PROJECT_STAGE_PAUSED = "1332176283"
 PROJECT_STAGE_ENDED = "1332176282"
 
@@ -358,7 +358,9 @@ def create_project_for_row(report_row: dict, hubspot_headers: dict):
 
 
 def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, duplicate_names, hubspot_headers):
-    processed_ids = set()
+    processed_msads_ids = set()
+    processed_hubspot_campaign_ids = set()
+    processed_project_keys = set()
 
     for report_row in report_rows:
         msads_id = report_row["CampaignId"]
@@ -367,11 +369,9 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
             print("SKIP missing CampaignId")
             continue
 
-        if msads_id in processed_ids:
+        if msads_id in processed_msads_ids:
             print(f"SKIP already processed CampaignId: {msads_id}")
             continue
-
-        processed_ids.add(msads_id)
 
         clean_name = sanitize_campaign_name(report_row["CampaignName"])
         match = campaigns_by_msads_id.get(msads_id)
@@ -386,28 +386,60 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
             }
         }
 
+        target_hubspot_campaign_id = None
+        action_type = None
+
         if match:
-            patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{match['id']}"
+            target_hubspot_campaign_id = match["id"]
+            action_type = "PATCH"
+        else:
+            if clean_name in duplicate_names:
+                raise ValueError(f"Duplicate sanitized campaign name in HubSpot: {clean_name}")
+
+            name_match = campaigns_by_clean_name.get(clean_name)
+            if name_match:
+                target_hubspot_campaign_id = name_match["id"]
+                action_type = "PATCH_BY_NAME"
+            else:
+                action_type = "POST"
+
+        if target_hubspot_campaign_id and target_hubspot_campaign_id in processed_hubspot_campaign_ids:
+            print(f"SKIP already processed HubSpot campaign: {target_hubspot_campaign_id}")
+            processed_msads_ids.add(msads_id)
+            continue
+
+        week_fields = parse_timeperiod_to_week_fields(report_row["TimePeriod"])
+        project_key = f"{week_fields['week_key']}|{msads_id}"
+
+        if project_key in processed_project_keys:
+            print(f"SKIP already processed project key: {project_key}")
+            processed_msads_ids.add(msads_id)
+            continue
+
+        if action_type == "PATCH":
+            patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{target_hubspot_campaign_id}"
             patch_response = requests.patch(patch_url, headers=hubspot_headers, json=payload, timeout=30)
             patch_response.raise_for_status()
             updated = patch_response.json()
             print("PATCH OK")
             print(updated["id"])
             create_project_for_row(report_row, hubspot_headers)
+            processed_hubspot_campaign_ids.add(updated["id"])
+            processed_project_keys.add(project_key)
+            processed_msads_ids.add(msads_id)
             continue
 
-        if clean_name in duplicate_names:
-            raise ValueError(f"Duplicate sanitized campaign name in HubSpot: {clean_name}")
-
-        name_match = campaigns_by_clean_name.get(clean_name)
-        if name_match:
-            patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{name_match['id']}"
+        if action_type == "PATCH_BY_NAME":
+            patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{target_hubspot_campaign_id}"
             patch_response = requests.patch(patch_url, headers=hubspot_headers, json=payload, timeout=30)
             patch_response.raise_for_status()
             updated = patch_response.json()
             print("PATCH BY NAME OK")
             print(updated["id"])
             create_project_for_row(report_row, hubspot_headers)
+            processed_hubspot_campaign_ids.add(updated["id"])
+            processed_project_keys.add(project_key)
+            processed_msads_ids.add(msads_id)
             continue
 
         create_payload = {
@@ -430,6 +462,9 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
         print(created["id"])
 
         create_project_for_row(report_row, hubspot_headers)
+        processed_hubspot_campaign_ids.add(created["id"])
+        processed_project_keys.add(project_key)
+        processed_msads_ids.add(msads_id)
 
 
 access_token = refresh_msads_access_token()
