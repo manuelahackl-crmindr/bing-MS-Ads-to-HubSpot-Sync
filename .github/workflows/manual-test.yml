@@ -7,6 +7,15 @@ jobs:
   run-script:
     runs-on: ubuntu-latest
 
+    env:
+      MSADS_CLIENT_ID: ${{ secrets.MSADS_CLIENT_ID }}
+      MSADS_CLIENT_SECRET: ${{ secrets.MSADS_CLIENT_SECRET }}
+      MSADS_REFRESH_TOKEN: ${{ secrets.MSADS_REFRESH_TOKEN }}
+      MSADS_DEVELOPER_TOKEN: ${{ secrets.MSADS_DEVELOPER_TOKEN }}
+      MSADS_CUSTOMER_ID: ${{ secrets.MSADS_CUSTOMER_ID }}
+      MSADS_ACCOUNT_ID: ${{ secrets.MSADS_ACCOUNT_ID }}
+      HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
