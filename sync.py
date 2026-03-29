@@ -429,24 +429,24 @@ def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, dupli
             processed_msads_ids.add(msads_id)
             continue
 
-if action_type == "PATCH_BY_NAME":
-    print("PATCH BY NAME DEBUG")
-    print(f"CampaignId={msads_id}")
-    print(f"CampaignName={report_row['CampaignName']}")
-    print(f"SanitizedName={clean_name}")
-    print(f"HubSpotCampaignId={target_hubspot_campaign_id}")
+        if action_type == "PATCH_BY_NAME":
+            print("PATCH BY NAME DEBUG")
+            print(f"CampaignId={msads_id}")
+            print(f"CampaignName={report_row['CampaignName']}")
+            print(f"SanitizedName={clean_name}")
+            print(f"HubSpotCampaignId={target_hubspot_campaign_id}")
 
-    patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{target_hubspot_campaign_id}"
-    patch_response = requests.patch(patch_url, headers=hubspot_headers, json=payload, timeout=30)
-    patch_response.raise_for_status()
-    updated = patch_response.json()
-    print("PATCH BY NAME OK")
-    print(updated["id"])
-    create_project_for_row(report_row, hubspot_headers)
-    processed_hubspot_campaign_ids.add(updated["id"])
-    processed_project_keys.add(project_key)
-    processed_msads_ids.add(msads_id)
-    continue
+            patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{target_hubspot_campaign_id}"
+            patch_response = requests.patch(patch_url, headers=hubspot_headers, json=payload, timeout=30)
+            patch_response.raise_for_status()
+            updated = patch_response.json()
+            print("PATCH BY NAME OK")
+            print(updated["id"])
+            create_project_for_row(report_row, hubspot_headers)
+            processed_hubspot_campaign_ids.add(updated["id"])
+            processed_project_keys.add(project_key)
+            processed_msads_ids.add(msads_id)
+            continue
 
         create_payload = {
             "properties": {
