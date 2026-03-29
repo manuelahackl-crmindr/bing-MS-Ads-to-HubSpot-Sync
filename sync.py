@@ -65,54 +65,65 @@ for campaign in results:
 if duplicates:
     raise ValueError(f"Duplicate msads_campaign_id values found: {', '.join(duplicates.keys())}")
 
-report_row = {
-    "CampaignId": "533348352",
-    "CampaignName": "NP  | SN | Köln - Interesse und vor Ort (DACH) + Test",
-    "Impressions": "480",
-    "Clicks": "19",
-    "Spend": "15.99",
-    "Status": "Active",
-}
+report_rows = [
+    {
+        "CampaignId": "533348352",
+        "CampaignName": "NP  | SN | Köln - Interesse und vor Ort (DACH) + Test",
+        "Impressions": "480",
+        "Clicks": "19",
+        "Spend": "15.99",
+        "Status": "Active",
+    },
+    {
+        "CampaignId": "436018749",
+        "CampaignName": "[Search] Basel - Vor Ort",
+        "Impressions": "51",
+        "Clicks": "1",
+        "Spend": "0.00",
+        "Status": "Active",
+    },
+]
 
-msads_id = report_row["CampaignId"]
-clean_name = sanitize_campaign_name(report_row["CampaignName"])
-match = campaigns_by_msads_id.get(msads_id)
+for report_row in report_rows:
+    msads_id = report_row["CampaignId"]
+    clean_name = sanitize_campaign_name(report_row["CampaignName"])
+    match = campaigns_by_msads_id.get(msads_id)
 
-if match:
-    payload = {
-        "properties": {
-            "msads_campaign_id": msads_id,
-            "msads_impressions": report_row["Impressions"],
-            "msads_clicks": report_row["Clicks"],
-            "msads_spend_eur": report_row["Spend"],
-            "msads_status": report_row["Status"],
+    if match:
+        payload = {
+            "properties": {
+                "msads_campaign_id": msads_id,
+                "msads_impressions": report_row["Impressions"],
+                "msads_clicks": report_row["Clicks"],
+                "msads_spend_eur": report_row["Spend"],
+                "msads_status": report_row["Status"],
+            }
         }
-    }
 
-    patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{match['id']}"
-    patch_response = requests.patch(patch_url, headers=headers, json=payload, timeout=30)
-    patch_response.raise_for_status()
+        patch_url = f"https://api.hubapi.com/marketing/v3/campaigns/{match['id']}"
+        patch_response = requests.patch(patch_url, headers=headers, json=payload, timeout=30)
+        patch_response.raise_for_status()
 
-    updated = patch_response.json()
-    print("PATCH OK")
-    print(updated["id"])
-else:
-    payload = {
-        "properties": {
-            "hs_name": clean_name,
-            "hs_notes": "bing",
-            "msads_campaign_id": msads_id,
-            "msads_impressions": report_row["Impressions"],
-            "msads_clicks": report_row["Clicks"],
-            "msads_spend_eur": report_row["Spend"],
-            "msads_status": report_row["Status"],
+        updated = patch_response.json()
+        print("PATCH OK")
+        print(updated["id"])
+    else:
+        payload = {
+            "properties": {
+                "hs_name": clean_name,
+                "hs_notes": "bing",
+                "msads_campaign_id": msads_id,
+                "msads_impressions": report_row["Impressions"],
+                "msads_clicks": report_row["Clicks"],
+                "msads_spend_eur": report_row["Spend"],
+                "msads_status": report_row["Status"],
+            }
         }
-    }
 
-    create_url = "https://api.hubapi.com/marketing/v3/campaigns"
-    create_response = requests.post(create_url, headers=headers, json=payload, timeout=30)
-    create_response.raise_for_status()
+        create_url = "https://api.hubapi.com/marketing/v3/campaigns"
+        create_response = requests.post(create_url, headers=headers, json=payload, timeout=30)
+        create_response.raise_for_status()
 
-    created = create_response.json()
-    print("POST OK")
-    print(created["id"])
+        created = create_response.json()
+        print("POST OK")
+        print(created["id"])
