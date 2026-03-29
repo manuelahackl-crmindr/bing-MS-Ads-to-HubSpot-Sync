@@ -240,14 +240,23 @@ def build_hubspot_lookup(results):
 
 
 def sync_rows(report_rows, campaigns_by_msads_id, campaigns_by_clean_name, duplicate_names, hubspot_headers):
+    processed_ids = set()
+
     for report_row in report_rows:
         msads_id = report_row["CampaignId"]
-        clean_name = sanitize_campaign_name(report_row["CampaignName"])
-        match = campaigns_by_msads_id.get(msads_id)
 
         if not msads_id:
             print("SKIP missing CampaignId")
             continue
+
+        if msads_id in processed_ids:
+            print(f"SKIP already processed CampaignId: {msads_id}")
+            continue
+
+        processed_ids.add(msads_id)
+
+        clean_name = sanitize_campaign_name(report_row["CampaignName"])
+        match = campaigns_by_msads_id.get(msads_id)
 
         payload = {
             "properties": {
