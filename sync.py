@@ -5,6 +5,7 @@ import io
 import time
 import zipfile
 import requests
+import xml.etree.ElementTree as ET
 
 HUBSPOT_TOKEN = os.getenv("HUBSPOT_TOKEN")
 MSADS_CLIENT_ID = os.getenv("MSADS_CLIENT_ID")
@@ -38,6 +39,18 @@ def sanitize_campaign_name(name: str) -> str:
     return cleaned[:256]
 
 
+def localname(tag: str) -> str:
+    return tag.split("}", 1)[-1] if "}" in tag else tag
+
+
+def extract_first_tag(xml_text: str, tag_name: str):
+    root = ET.fromstring(xml_text)
+    for elem in root.iter():
+        if localname(elem.tag) == tag_name:
+            return elem.text
+    return None
+
+
 def refresh_msads_access_token():
     token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
     data = {
@@ -53,54 +66,91 @@ def refresh_msads_access_token():
 
 
 def submit_report(access_token: str):
-    url = "https://reporting.api.bingads.microsoft.com/Reporting/v13/Reports/SubmitGenerateReport"
+    url = "https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc"
+
+    body = f"""<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">
+    <Action mustUnderstand="1">SubmitGenerateReport</Action>
+    <AuthenticationToken>{access_token}</AuthenticationToken>
+    <CustomerAccountId>{MSADS_ACCOUNT_ID}</CustomerAccountId>
+    <CustomerId>{MSADS_CUSTOMER_ID}</CustomerId>
+    <DeveloperToken>{MSADS_DEVELOPER_TOKEN}</DeveloperToken>
+  </s:Header>
+  <s:Body>
+    <SubmitGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">
+      <ReportRequest i:type="CampaignPerformanceReportRequest">
+        <ExcludeColumnHeaders>false</ExcludeColumnHeaders>
+        <ExcludeReportFooter>true</ExcludeReportFooter>
+        <ExcludeReportHeader>true</ExcludeReportHeader>
+        <Format>Csv</Format>
+        <FormatVersion>2.0</FormatVersion>
+        <ReportName>Microsoft Ads Weekly Campaign Report</ReportName>
+        <ReturnOnlyCompleteData>false</ReturnOnlyCompleteData>
+        <Aggregation>WeeklyStartingMonday</Aggregation>
+        <Columns xmlns:a="https://bingads.microsoft.com/Reporting/v13">
+          <a:CampaignPerformanceReportColumn>TimePeriod</a:CampaignPerformanceReportColumn>
+          <a:CampaignPerformanceReportColumn>CampaignId</a:CampaignPerformanceReportColumn>
+          <a:CampaignPerformanceReportColumn>CampaignName</a:CampaignPerformanceReportColumn>
+          <a:CampaignPerformanceReportColumn>Impressions</a:CampaignPerformanceReportColumn>
+          <a:CampaignPerformanceReportColumn>Clicks</a:CampaignPerformanceReportColumn>
+          <a:CampaignPerformanceReportColumn>Spend</a:CampaignPerformanceReportColumn>
+        </Columns>
+        <Filter i:nil="true" />
+        <Scope xmlns:a="https://bingads.microsoft.com/Reporting/v13">
+          <a:AccountIds xmlns:b="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
+            <b:long>{MSADS_ACCOUNT_ID}</b:long>
+          </a:AccountIds>
+          <a:Campaigns i:nil="true" />
+        </Scope>
+        <Time>
+          <CustomDateRangeStart i:nil="true" />
+          <CustomDateRangeEnd i:nil="true" />
+          <PredefinedTime>LastWeekStartingMonday</PredefinedTime>
+          <ReportTimeZone>AmsterdamBerlinBernRomeStockholmVienna</ReportTimeZone>
+        </Time>
+      </ReportRequest>
+    </SubmitGenerateReportRequest>
+  </s:Body>
+</s:Envelope>"""
+
     headers = {
-        "Authorization": f"Bearer {access_token}",
-        "DeveloperToken": MSADS_DEVELOPER_TOKEN,
-        "CustomerId": str(MSADS_CUSTOMER_ID),
-        "AccountId": str(MSADS_ACCOUNT_ID),
-        "Content-Type": "application/json",
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": "SubmitGenerateReport",
     }
-    body = {
-        "ReportRequest": {
-            "Type": "CampaignPerformanceReportRequest",
-            "Format": "Csv",
-            "FormatVersion": "2.0",
-            "ReportName": "Microsoft Ads Weekly Campaign Report",
-            "ReturnOnlyCompleteData": False,
-            "Aggregation": "WeeklyStartingMonday",
-            "Columns": [
-                "TimePeriod",
-                "CampaignId",
-                "CampaignName",
-                "Impressions",
-                "Clicks",
-                "Spend",
-            ],
-            "Scope": {
-                "AccountIds": [int(MSADS_ACCOUNT_ID)]
-            },
-            "Time": {
-                "PredefinedTime": "LastWeekStartingMonday",
-                "ReportTimeZone": "AmsterdamBerlinBernRomeStockholmVienna",
-            },
-        }
-    }
-    response = requests.post(url, headers=headers, json=body, timeout=60)
+
+    response = requests.post(url, headers=headers, data=body.encode("utf-8"), timeout=60)
     response.raise_for_status()
-    data = response.json()
-    report_request_id = data.get("ReportRequestId") or data.get("reportRequestId")
-    if not report_request_id:
-        raise ValueError(f"No ReportRequestId found: {data}")
-    return report_request_id, headers
+    return response.text
 
 
-def poll_report(report_request_id: str, headers: dict):
-    url = "https://reporting.api.bingads.microsoft.com/Reporting/v13/Reports/PollGenerateReport"
-    body = {"ReportRequestId": report_request_id}
-    response = requests.post(url, headers=headers, json=body, timeout=60)
+def poll_report(access_token: str, report_request_id: str):
+    url = "https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc"
+
+    body = f"""<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">
+    <Action mustUnderstand="1">PollGenerateReport</Action>
+    <AuthenticationToken>{access_token}</AuthenticationToken>
+    <CustomerAccountId>{MSADS_ACCOUNT_ID}</CustomerAccountId>
+    <CustomerId>{MSADS_CUSTOMER_ID}</CustomerId>
+    <DeveloperToken>{MSADS_DEVELOPER_TOKEN}</DeveloperToken>
+  </s:Header>
+  <s:Body>
+    <PollGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">
+      <ReportRequestId>{report_request_id}</ReportRequestId>
+    </PollGenerateReportRequest>
+  </s:Body>
+</s:Envelope>"""
+
+    headers = {
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": "PollGenerateReport",
+    }
+
+    response = requests.post(url, headers=headers, data=body.encode("utf-8"), timeout=60)
     response.raise_for_status()
-    return response.json()
+    return response.text
 
 
 def download_and_parse_report(download_url: str):
@@ -225,29 +275,29 @@ def sync_rows(report_rows, campaigns_by_msads_id, hubspot_headers):
 access_token = refresh_msads_access_token()
 print("Access token OK")
 
-report_request_id, msads_headers = submit_report(access_token)
+submit_xml = submit_report(access_token)
+report_request_id = extract_first_tag(submit_xml, "ReportRequestId")
+if not report_request_id:
+    raise ValueError(f"No ReportRequestId found in submit response:\n{submit_xml}")
+
 print(f"ReportRequestId: {report_request_id}")
 
 download_url = None
 for _ in range(12):
     time.sleep(5)
-    poll_data = poll_report(report_request_id, msads_headers)
-    status = (
-        poll_data.get("ReportRequestStatus", {}).get("Status")
-        or poll_data.get("reportRequestStatus", {}).get("status")
-    )
+    poll_xml = poll_report(access_token, report_request_id)
+    status = extract_first_tag(poll_xml, "Status")
     print(f"Report status: {status}")
+
     if status == "Success":
-        download_url = (
-            poll_data.get("ReportRequestStatus", {}).get("ReportDownloadUrl")
-            or poll_data.get("reportRequestStatus", {}).get("reportDownloadUrl")
-        )
-        break
-    if status == "Error":
-        raise ValueError(f"Report failed: {poll_data}")
+        download_url = extract_first_tag(poll_xml, "ReportDownloadUrl")
+        if download_url:
+            break
+    elif status == "Error":
+        raise ValueError(f"Report failed:\n{poll_xml}")
 
 if not download_url:
-    raise ValueError("No ReportDownloadUrl found")
+    raise ValueError(f"No ReportDownloadUrl found in poll response:\n{poll_xml}")
 
 report_rows = download_and_parse_report(download_url)
 print(f"Downloaded report rows: {len(report_rows)}")
