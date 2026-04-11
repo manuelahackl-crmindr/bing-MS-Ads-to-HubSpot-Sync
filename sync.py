@@ -120,8 +120,8 @@ def build_columns_xml(include_timeperiod: bool):
 def build_time_xml_predefined():
     return """
         <Time>
-          <CustomDateRangeStart i:nil="true" />
           <CustomDateRangeEnd i:nil="true" />
+          <CustomDateRangeStart i:nil="true" />
           <PredefinedTime>LastWeekStartingMonday</PredefinedTime>
           <ReportTimeZone>AmsterdamBerlinBernRomeStockholmVienna</ReportTimeZone>
         </Time>
@@ -131,16 +131,17 @@ def build_time_xml_predefined():
 def build_time_xml_custom(start_date: date, end_date: date):
     return f"""
         <Time>
-          <CustomDateRangeStart>
-            <Day>{start_date.day}</Day>
-            <Month>{start_date.month}</Month>
-            <Year>{start_date.year}</Year>
-          </CustomDateRangeStart>
           <CustomDateRangeEnd>
             <Day>{end_date.day}</Day>
             <Month>{end_date.month}</Month>
             <Year>{end_date.year}</Year>
           </CustomDateRangeEnd>
+          <CustomDateRangeStart>
+            <Day>{start_date.day}</Day>
+            <Month>{start_date.month}</Month>
+            <Year>{start_date.year}</Year>
+          </CustomDateRangeStart>
+          <PredefinedTime i:nil="true" />
           <ReportTimeZone>AmsterdamBerlinBernRomeStockholmVienna</ReportTimeZone>
         </Time>
     """
