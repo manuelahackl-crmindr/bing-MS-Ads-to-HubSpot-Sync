@@ -1,0 +1,48 @@
+name: Create missing campaigns only
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_week:
+        description: "Start calendar week, e.g. 1"
+        required: true
+        default: "1"
+      end_week:
+        description: "End calendar week, e.g. 14"
+        required: true
+        default: "14"
+      year:
+        description: "Year, e.g. 2026"
+        required: true
+        default: "2026"
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    env:
+      MSADS_CLIENT_ID: ${{ secrets.MSADS_CLIENT_ID }}
+      MSADS_CLIENT_SECRET: ${{ secrets.MSADS_CLIENT_SECRET }}
+      MSADS_REFRESH_TOKEN: ${{ secrets.MSADS_REFRESH_TOKEN }}
+      MSADS_DEVELOPER_TOKEN: ${{ secrets.MSADS_DEVELOPER_TOKEN }}
+      MSADS_CUSTOMER_ID: ${{ secrets.MSADS_CUSTOMER_ID }}
+      MSADS_ACCOUNT_ID: ${{ secrets.MSADS_ACCOUNT_ID }}
+      HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+      BACKFILL_START_WEEK: ${{ inputs.start_week }}
+      BACKFILL_END_WEEK: ${{ inputs.end_week }}
+      BACKFILL_YEAR: ${{ inputs.year }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        run: python sync_missing_campaigns_only.py
