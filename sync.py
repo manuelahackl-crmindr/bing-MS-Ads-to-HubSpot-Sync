@@ -591,15 +591,26 @@ def get_backfill_weeks():
     if end_week < start_week:
         raise ValueError("BACKFILL_END_WEEK must be >= BACKFILL_START_WEEK")
 
+    jan1 = date(year, 1, 1)
+    today = date.today()
+
     weeks = []
     for week in range(start_week, end_week + 1):
         monday = date.fromisocalendar(year, week, 1)
         sunday = date.fromisocalendar(year, week, 7)
+
+        effective_start = monday if monday >= jan1 else jan1
+        effective_end = sunday if sunday <= today else today
+
+        if effective_end < effective_start:
+            print(f"SKIP week {year}-KW{str(week).zfill(2)} because effective_end < effective_start")
+            continue
+
         weeks.append({
             "year": year,
             "week": week,
-            "start_date": monday,
-            "end_date": sunday,
+            "start_date": effective_start,
+            "end_date": effective_end,
             "time_period": monday.isoformat(),
         })
     return weeks
