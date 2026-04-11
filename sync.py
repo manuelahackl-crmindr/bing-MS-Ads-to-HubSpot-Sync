@@ -4,7 +4,7 @@ import csv
 import io
 import time
 import zipfile
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import requests
 import xml.etree.ElementTree as ET
 
@@ -141,7 +141,6 @@ def build_time_xml_custom(start_date: date, end_date: date):
             <Month>{end_date.month}</Month>
             <Year>{end_date.year}</Year>
           </CustomDateRangeEnd>
-          <PredefinedTime i:nil="true" />
           <ReportTimeZone>AmsterdamBerlinBernRomeStockholmVienna</ReportTimeZone>
         </Time>
     """
