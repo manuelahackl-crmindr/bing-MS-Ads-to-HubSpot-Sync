@@ -1,4 +1,5 @@
 ## Bing to HubSpot Sync
+MSAds to HubSpot Sync is a one-way data integration between Microsoft Advertising (Bing Ads) and HubSpot.
 Repository name: bing-MS-Ads-to-HubSpot-Sync
  (client project)
 
